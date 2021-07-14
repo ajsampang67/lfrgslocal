@@ -1,0 +1,5 @@
+Bundle-Name: sonar-frontend
+Bundle-SymbolicName: sonar.frontend
+Bundle-Version: 1.0.0
+Export-Package: sonar.frontend.constants
+Web-ContextPath: /sonar-frontend

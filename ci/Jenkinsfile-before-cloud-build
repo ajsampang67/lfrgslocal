@@ -1,0 +1,69 @@
+// We're inside this pipeline context:
+//  steps {
+//      script {
+//          <included_from_this_place>
+//      }
+//  }
+
+// TODO Comment back in for integration testing
+// stage('Run Tests') {
+//     dir('liferay'){
+//         sh './gradlew check -x testIntegration --no-daemon --stacktrace'
+//     }
+//}
+
+// >>>>> NOTE <<<<<
+//
+// -Dsonar.branch.name OR -Dsonar.pullrequest.key most likely require full-depth clone
+// (complete history of commits), but the job in DXPC Jenkins uses shallow clone (depth=1) by default!
+//
+// TODO test "-Dsonar.scm.disabled=true" (set to false by default via SonarCloud UI)
+
+// Inspired by: https://blog.jdriven.com/2019/08/sonarcloud-github-pull-request-analysis-from-jenkins/
+stage('SonarCloud') {
+    dir('liferay') {
+        withEnv([
+                'GRADLE_OPTS=-XX:MaxMetaspaceSize=512m -XX:+IgnoreUnrecognizedVMOptions',
+                'JAVA_HOME=/opt/java/openjdk11'
+        ]) {
+            // TODO !changeRequest() does not work as expected (maybe it's because we're in a script{} context),
+            //      so detect PR vs. branch being built based on ENV variable being present or not
+            if (env.CHANGE_URL) {
+                echo "Building a PR, analyze as such in SonarCloud."
+
+                sh '''\
+                    #!/bin/bash
+
+                    set -euxo pipefail
+
+                    # Sample of github_repo (output): lfr-solution-desk/s-insurance-raylife
+                    github_repo="$LCP_CI_SCM_REPOSITORY_OWNER/$LCP_CI_SCM_REPOSITORY_NAME"    
+                    
+                    ./gradlew sonarqube \
+                        --no-daemon --stacktrace --info \
+                        -Dsonar.login=$SONAR_TOKEN \
+                        -Dsonar.pullrequest.provider=GitHub \
+                        -Dsonar.pullrequest.github.repository=$github_repo \
+                        -Dsonar.pullrequest.key=$CHANGE_ID \
+                        -Dsonar.pullrequest.base=$CHANGE_TARGET \
+                        -Dsonar.pullrequest.branch=$CHANGE_BRANCH
+               '''.stripIndent().trim()
+            }
+            else {
+                echo "Building a regular branch, analyze as such in SonarCloud."
+
+                // Without -Dsonar.branch.name, SonarCloud would associate the analyzed code always with "master".
+                sh '''\
+                    #!/bin/bash
+
+                    set -euxo pipefail
+                    
+                    ./gradlew sonarqube \
+                        --no-daemon --stacktrace --info \
+                        -Dsonar.login=$SONAR_TOKEN \
+                        -Dsonar.branch.name=$BRANCH_NAME
+               '''.stripIndent().trim()
+            }
+        }
+    }
+}
